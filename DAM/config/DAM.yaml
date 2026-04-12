@@ -1,5 +1,7 @@
-model_class: SCOUT_seg_v8 # To run SCOUT+ with map input only, change the model_class to SCOUT_map_v2
+# Model categories in model.py
+model_class: DAM
 
+# BDDADataset_seg is a processed BDDA dataset that includes semantic segmentation images.
 dataset: BDDADataset_seg
 
 last_weights: None

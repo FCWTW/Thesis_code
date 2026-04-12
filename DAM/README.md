@@ -1,13 +1,6 @@
-# Driver Attention Module
-Modeified from：https://github.com/ykotseruba/SCOUT
+# Deployment details for Driver Attention Module
 
-## Deployment Details
-
-1. Download BDDA and DR(eye)VE dataset following the instructions on their official websites:
-[BDDA](http://bdd-data.berkeley.edu/download.html)、
-[DR(eye)VE](https://aimagelab-legacy.ing.unimore.it/imagelab/page.asp?IdPage=8)
-
-2. Define the following paths in ~/.bashrc：
+1. Define the following paths in ~/.bashrc：
 ```bash
 # Paths to the datasets and DAM code
 export DREYEVE_PATH="/home/wayne/Documents/DREYEVE_DATA"
@@ -18,26 +11,6 @@ export CODE_FOLDER="/home/wayne/Documents/Progress/SCOUT"
 
 4. The weights pre-trained on BDDA can be found [here]().
 
----
-## Training the model
-Once you have completed the Deployment Details and made the necessary changes to /config/DAM, you can run the following command:
-```bash
-python3 train.py
-```
+5. You can modify the model type, dataset type, and training parameters in [/config/DAM.yaml]().
 
----
-## Testing the model
-Place the config file and model weights in /your_config, then run the following command:
-```bash
-python3 test.py --config_dir /your_config --evaluate
-```
-
-If you need to save test images, run the following command:
-```bash
-python3 test.py --config_dir /your_config --evaluate --save_images
-```
-
----
-## Processing the MMAU dataset
-```bash
-```
+6. Before training or testing, you need to process the BDDA dataset using [mmsegmentation]().
