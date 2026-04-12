@@ -1,7 +1,4 @@
-# Driver Attention Module
-Modified from：https://github.com/DeSinister/CycleCrash/
-
-## Deployment Details
+# Deployment details for Risk Assessment Module
 ```bash=
 conda create --name crash python=3.9
 conda activate crash
