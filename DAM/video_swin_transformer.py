@@ -785,11 +785,8 @@ class SwinTransformer3DBackbone(nn.Module):
 
         super(SwinTransformer3DBackbone, self).__init__()
         file_weight = 'pretrained_weights/swin_small_patch244_window877_kinetics400_1k.pth'
-        # [修正 1] 將局部變量 swin_backbone 改為實例屬性 self.swin_backbone
-        # 這樣後面的 self.swin_backbone.named_parameters() 才能讀得到
         self.swin_backbone = SwinTransformer3D(pretrained=file_weight, **kwargs)
 
-        # 這裡的引用也要改成從 self.swin_backbone 拿
         self.patch_embed = self.swin_backbone.patch_embed
         self.pos_drop = self.swin_backbone.pos_drop
         self.layers = self.swin_backbone.layers
@@ -812,46 +809,16 @@ class SwinTransformer3DBackbone(nn.Module):
                 parameter.requires_grad_(False)
         else:
             print("-> Applying Partial Freezing: Only training Stage 3 and Norm layers.")
-            
-            # [修正 1] 使用 self.parameters() 而不是 self.swin_backbone.parameters()
-            # 這樣才能確實鎖住被移到 self.downsamples 裡的參數
             for parameter in self.parameters():
                 parameter.requires_grad_(False)
                 
             unfrozen_count = 0
-            # [修正 2] 同樣使用 self.named_parameters() 來進行全域掃描
             for name, parameter in self.named_parameters():
                 if 'layers.3' in name or name in ['swin_backbone.norm.weight', 'swin_backbone.norm.bias']:
                     parameter.requires_grad_(True)
                     unfrozen_count += 1
             
             print(f"-> Unfrozen parameters count: {unfrozen_count}")
-            # print("\n" + "="*40)
-            # print("🕵️‍♂️ Parameter Freezing Status Audit")
-            # print("="*40)
-            
-            # frozen_names = []
-            # unfrozen_names = []
-            
-            # for name, param in self.named_parameters():
-            #     if param.requires_grad:
-            #         unfrozen_names.append(name)
-            #     else:
-            #         frozen_names.append(name)
-            
-            # print(f"\n✅ 解凍的參數 (Unfrozen) - 共 {len(unfrozen_names)} 個:")
-            # for name in unfrozen_names:
-            #     print(f"  [🔥 訓練中] {name}")
-                
-            # print(f"\n❄️ 凍結的參數 (Frozen) - 共 {len(frozen_names)} 個:")
-            # # 凍結的通常很多，我們印前 10 個和最後 5 個確認即可
-            # for name in frozen_names[:10]:
-            #     print(f"  [🔒 已鎖死] {name}")
-            # print("  ... (中間省略) ...")
-            # for name in frozen_names[-5:]:
-            #     print(f"  [🔒 已鎖死] {name}")
-            # print("="*40 + "\n")
-
 
     def load_weights(self):
         print(f'-> Loading pretrained backbone weights...')

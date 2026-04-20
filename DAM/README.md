@@ -14,3 +14,39 @@ export CODE_FOLDER="/home/wayne/Documents/Progress/SCOUT"
 5. You can modify the model type, dataset type, and training parameters in [/config/DAM.yaml]().
 
 6. Before training or testing, you need to process the BDDA dataset using [mmsegmentation]().
+
+---
+## Prepare for MM-AU dataset
+
+```
+MM-AU # root of your MM-AU
+├── CAP-DATA
+│   ├── 1
+│       ├── 001537
+│           ├── images
+│               ├── 000001.jpg
+│               ├── ......
+│           ├── segmentations
+│               ├── 000001.jpg
+│               ├── ......
+│   ├── 2
+│   ├── ......
+│   ├── 62
+├── DADA-DATA
+│   ├── 1
+│       ├── 001
+│           ├── images
+│               ├── 0001.png
+│               ├── ......
+│           ├── segmentations
+│               ├── 0001.jpg
+│               ├── ......
+│   ├── 2
+│   ├── ......
+│   ├── 61
+```
+1. Please organize the dataset according to the above structure.
+
+2. Next, use [/mmsegmentation/process_MMAU.py]() to generate a semantic segmentation map of the dataset.
+
+3. Eventually, use [MMAU_inference.py]() to perform DAM inference.

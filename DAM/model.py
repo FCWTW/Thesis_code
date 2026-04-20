@@ -81,7 +81,7 @@ class DecoderSwin(nn.Module):
         
         z = z.view(z.size(0), z.size(3), z.size(4))
         return z
-    
+
 class Seg_encoder(nn.Module):
     def __init__(self, out_channels=256):
         super(Seg_encoder, self).__init__()

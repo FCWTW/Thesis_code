@@ -8,14 +8,21 @@
 
 ---
 ## Driver Attention Module
-Modeified from：https://github.com/ykotseruba/SCOUT
 
+Modified from [SCOUT+](https://github.com/ykotseruba/SCOUT). Those code removes certain parts of the training and inference code for SCOUT and SCOUT+. If you need these files, please refer to the original GitHub repository.
+
+### Environment Setup
 You can find instructions on how to set up the environment [here]().
 
 ### Training the model
 Once you have completed the Deployment Details and made the necessary changes to [/config/DAM.yaml](), you can run the following command for training:
 ```bash
 python3 train.py
+```
+
+Or, if you want to use a customized config.yaml file for training, run the following command:
+```bash
+python3 train.py --config_dir /your_config.yaml
 ```
 
 ### Testing the model
@@ -28,6 +35,16 @@ If you need to save test images, run the following command:
 ```bash
 python3 test.py --config_dir /your_config --evaluate --save_images
 ```
+
+### Visualize the results
+You can use [get_heatmap.py]() to get the visual heatmap of driver attention.
+
+### Inference on MM-AU dataset
+You must first follow the [steps]() before executing the following command:
+```bash
+python3 MMAU_inference.py --config_dir /your_config --dataset_dir /MM-AU_root
+```
+
 ---
 ## Risk Assessment Module
 Modified from：https://github.com/DeSinister/CycleCrash/

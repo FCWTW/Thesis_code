@@ -895,40 +895,12 @@ class BDDADataset_seg(DReyeVEDataset):
         if self.mode == "train":
             self.color_jitter = transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
         else:
-            self.color_jitter = nn.Identity() # 驗證集/測試集不做任何事
+            self.color_jitter = nn.Identity()
 
         self.normalize = transforms.Normalize(
             [0.485, 0.456, 0.406],
             [0.229, 0.224, 0.225]
         )
-        '''
-        self.img_transform = transforms.Compose([
-            transforms.Resize(img_size),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                [0.485, 0.456, 0.406],
-                [0.229, 0.224, 0.225]
-            )
-        ])
-        self.rgb_transform = transforms.Compose([
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05),
-            transforms.Resize(img_size),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                [0.485, 0.456, 0.406],
-                [0.229, 0.224, 0.225]
-            )
-        ])
-
-        self.seg_transform = transforms.Compose([
-            transforms.Resize(img_size),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                [0.485, 0.456, 0.406],
-                [0.229, 0.224, 0.225]
-            )
-        ])
-        '''
 
     def setup(self, vid_id=-1):
 
@@ -1008,26 +980,6 @@ class BDDADataset_seg(DReyeVEDataset):
             seg_img.append(img_tensor)
         return seg_img
     
-    '''
-    def get_images(self, vid_id, start_idx):
-        obs_img = []
-        img_dir_path = os.path.join(self.data_path, 'camera_frames', str(vid_id))
-        for i in range(self.obs_length):
-            # load_time = time.time()
-            img = self.load_image(img_dir_path, start_idx+i)
-            obs_img.append(self.img_transform(img))
-        return obs_img
-
-    def get_seg(self, vid_id, start_idx):
-        seg_img = []
-        img_dir_path = os.path.join(self.data_path, 'segmentation', str(vid_id))
-        for i in range(self.obs_length):
-            # load_time = time.time()
-            img = self.load_image(img_dir_path, start_idx+i)
-            seg_img.append(self.img_transform(img))
-        return seg_img    
-    '''
-
     def load_image(self, img_dir_path, frame_idx):
         img_path = os.path.join(img_dir_path, f'{frame_idx:05d}.jpg')
         try:
@@ -1105,16 +1057,13 @@ class BDDADataset_seg(DReyeVEDataset):
             if os.path.exists(img_path):
                 img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
                 nonzero = sum(sum(img)) != 0
-                #nonzero = int(os.path.getsize(img_path) > 10709) # size of the empty image
             return nonzero
 
         samples = []
         sample_idx_list = self.veh_df[vid_id]['frame'].values[1:-self.obs_length-1:step]
-        #print(vid_id, self.veh_df[vid_id]['lat action'].unique())
-        #if self.mode in ['train', 'val']:
+
         for frame_idx in sample_idx_list:
             gt_path = self.get_gt_path(vid_id, frame_idx+self.obs_length-1)
-            #if self.mode in ['train', 'val']:
             if is_nonzero(gt_path):
                     samples.append((vid_id, frame_idx))
 
@@ -1144,29 +1093,10 @@ class BDDADataset_seg(DReyeVEDataset):
             if obs_img is not None:
                 obs_img = TF.hflip(obs_img)
                 seg_img = TF.hflip(seg_img)
-            
-            # Ground Truth 也必須同步翻轉！
             gt_tensor = gt_tensor.flip(-1)
 
         # tot_time = time.time() - tot_time
         return obs_img, gt_tensor, seg_img, (vid_id, start_idx+self.obs_length-1, idx)
-
-    # def __getitem__(self, idx):
-    #     # tot_time = time.time()
-    #     (vid_id, start_idx) = self.sample_list[idx][:2]
-    #     obs_img = None
-    #     seg_img = None
-
-    #     if self.use_images:
-    #         # (T, C, H, W)
-    #         obs_img = self.get_images(vid_id, start_idx).float()
-
-    #         seg_img_stack = self.get_seg(vid_id, start_idx)
-    #         seg_img = torch.stack(seg_img_stack, dim=0).float()
-
-    #     gt = self.get_gt(vid_id, start_idx)
-    #     # tot_time = time.time() - tot_time
-    #     return obs_img, torch.FloatTensor(gt), seg_img, (vid_id, start_idx+self.obs_length-1, idx)
 
 class MMAUDataset(Dataset):
     def __init__(self,
@@ -1198,19 +1128,16 @@ class MMAUDataset(Dataset):
         print(f'-> Scanning dataset directory: {self.dataset_path}')
         subsets = ['CAP-DATA', 'DADA-DATA']
         
-        # 走訪 CAP-DATA 與 DADA-DATA
         for subset in subsets:
             subset_path = os.path.join(self.dataset_path, subset)
             if not os.path.exists(subset_path): 
                 continue
             
-            # 走訪分類資料夾 (1, 2, ..., 62)
             for cat in os.listdir(subset_path):
                 cat_path = os.path.join(subset_path, cat)
                 if not os.path.isdir(cat_path): 
                     continue
                 
-                # 走訪影片 ID (001537, 001, ...)
                 for vid in os.listdir(cat_path):
                     vid_path = os.path.join(cat_path, vid)
                     if not os.path.isdir(vid_path): 
@@ -1222,26 +1149,20 @@ class MMAUDataset(Dataset):
                     if not os.path.exists(img_dir) or not os.path.exists(seg_dir):
                         continue
                         
-                    # 抓取裡面所有的圖片檔並排序 (確保影格是連續的)
-                    # 這樣就不必管它是 .jpg 還是 .png，也不必管檔名長度
                     img_files = sorted([os.path.join(img_dir, f) for f in os.listdir(img_dir) if f.endswith(('.jpg', '.png'))])
                     seg_files = sorted([os.path.join(seg_dir, f) for f in os.listdir(seg_dir) if f.endswith(('.jpg', '.png'))])
                     
-                    # 確保影像與分割圖數量足夠我們取一個 clip (obs_length)
                     num_frames = min(len(img_files), len(seg_files))
                     if num_frames < self.obs_length:
                         continue
                         
-                    # 建立一個獨一無二的 ID (例如: "CAP-DATA_1_001537")，以免不同資料夾有同名影片
                     unique_vid_id = f"{subset}_{cat}_{vid}"
                     
-                    # 儲存該影片的路徑清單
                     self.video_info[unique_vid_id] = {
                         'img_paths': img_files[:num_frames],
                         'seg_paths': seg_files[:num_frames]
                     }
                     
-                    # 產生 sliding window 樣本，step=1
                     for start_idx in range(num_frames - self.obs_length + 1):
                         self.sample_list.append((unique_vid_id, start_idx))
                         
@@ -1256,8 +1177,6 @@ class MMAUDataset(Dataset):
         
         for i in range(self.obs_length):
             curr_idx = start_idx + i
-            
-            # 讀取 RGB 影像
             img_path = vid_data['img_paths'][curr_idx]
             try:
                 img = Image.open(img_path).convert('RGB')
@@ -1265,14 +1184,11 @@ class MMAUDataset(Dataset):
                 print('ERROR: could not load', img_path)
                 raise(OSError)
             
-            # 記錄第一張圖的原始大小 (PIL 的 size 格式為 Width, Height)
             if original_size is None:
-                original_size = (img.size[1], img.size[0]) # 轉換為 (Height, Width)
+                original_size = (img.size[1], img.size[0])
                 
             img_tensor = self.base_transform(img)
             obs_img.append(img_tensor)
-            
-            # 讀取對應的 Segmentation 影像
             seg_path = vid_data['seg_paths'][curr_idx]
             try:
                 seg = Image.open(seg_path).convert('RGB')
@@ -1283,14 +1199,10 @@ class MMAUDataset(Dataset):
             seg_tensor = self.base_transform(seg)
             seg_img.append(seg_tensor)
 
-        # 將 List 疊合為 Tensor (T, C, H, W)
         obs_tensor = torch.stack(obs_img, dim=0)
         seg_tensor = torch.stack(seg_img, dim=0)
-        
-        # 進行正規化
         obs_tensor = self.normalize(obs_tensor)
         seg_tensor = self.normalize(seg_tensor) 
-        
         return obs_tensor, seg_tensor, original_size
 
     def __len__(self):
@@ -1298,15 +1210,12 @@ class MMAUDataset(Dataset):
 
     def __getitem__(self, idx):
         vid_id, start_idx = self.sample_list[idx]
-
         if self.use_images:
             obs_img, seg_img, (original_h, original_w) = self.get_images_and_segs(vid_id, start_idx)
         else:
             obs_img, seg_img, original_h, original_w = None, None, 0, 0
 
-        # 計算最後一張圖的 index，當作存檔的 frame_id
         end_frame_id = start_idx + self.obs_length - 1
-
         return obs_img, seg_img, (original_h, original_w), vid_id, end_frame_id
 
 class LBWDataset(Dataset):

@@ -42,7 +42,7 @@ def get_model_class(model_class_name):
 
 
 class Train:
-    def __init__(self, config_file='configs/default.yaml', save_dir=None):
+    def __init__(self, config_file='configs/DAM.yaml', save_dir=None):
         self.configs = self.load_config(config_file)
 
         self.dataset_name = self.configs['dataset']
@@ -67,16 +67,19 @@ class Train:
         print(f'-> Building {self.configs["model_class"]}')
         self.model = get_model_class(self.configs['model_class'])(**self.model_params)
 
+        # Set the pre-trained weights if needed
+        # self.model.load_state_dict(torch.load('/home/wayne/Documents/Progress/SCOUT/train_runs/20260115_seg_2/checkpoint_2.pt'), strict=False)
+
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         if torch.cuda.device_count() > 1:
             print('-> Detected', torch.cuda.device_count(), 'GPUs')
             self.model = nn.DataParallel(self.model)
 
         self.model.to(self.device)
-
-        params = list(filter(lambda p: p.requires_grad, self.model.parameters())) 
         
+        # Learning rate settings in the source code
         '''
+        params = list(filter(lambda p: p.requires_grad, self.model.parameters())) 
         if self.train_params['optimizer'] == 'Adam':
             self.optimizer = torch.optim.Adam(params, lr=self.train_params['lr'], weight_decay=1e-4)
         elif self.train_params['optimizer'] == 'AdamW':
@@ -92,8 +95,8 @@ class Train:
             else:
                 other_params.append(param)
         self.optimizer = torch.optim.Adam([
-            {'params': backbone_params, 'lr': 1e-6}, # Backbone 給極小 (1e-6)
-            {'params': other_params,    'lr': 1e-4}  # Seg/Fusion 給正常 (1e-4)
+            {'params': backbone_params, 'lr': 1e-6},
+            {'params': other_params,    'lr': 1e-4}
         ], weight_decay=1e-4)
 
         if self.train_params['lr_sched']:
