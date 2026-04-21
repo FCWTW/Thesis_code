@@ -1,5 +1,5 @@
 # Model categories in model.py
-model_class: DAM
+model_class: DAM_2
 
 # BDDADataset_seg is a processed BDDA dataset that includes semantic segmentation images.
 dataset: BDDADataset_seg
