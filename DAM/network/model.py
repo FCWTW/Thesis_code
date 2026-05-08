@@ -10,6 +10,8 @@ import time
 from utils import get_task_attribute_dict
 import logging
 import datetime
+from network.filters import cfg
+from network.seg_encoder import *
 
 class DecoderSwin(nn.Module):
     def __init__(self, num_layers=4):
@@ -81,209 +83,6 @@ class DecoderSwin(nn.Module):
         
         z = z.view(z.size(0), z.size(3), z.size(4))
         return z
-
-class GraphConvolution(nn.Module):
-    """
-    Modify from https://github.com/JWFangit/LOTVS-DADA/blob/master/SCAFNet/nets.py#L103
-    Basic graph convolution layer (GCN) as in https://arxiv.org/abs/1609.02907
-    Input: features=[batch, node, C_in], adj = [batch, node, node]
-    Output: [batch, node, C_out]
-    """
-    def __init__(self, in_features, out_features, activation=None, use_bias=True):
-        super(GraphConvolution, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.activation = activation
-        
-        self.weight = nn.Parameter(torch.FloatTensor(in_features, out_features))
-        if use_bias:
-            self.bias = nn.Parameter(torch.FloatTensor(out_features))
-        else:
-            self.register_parameter('bias', None)
-        
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        # Glorot uniform initialization for weights (類似 Keras 的 glorot_uniform)
-        # nn.init.kaiming_uniform_(self.weight)
-        nn.init.xavier_uniform_(self.weight)
-        if self.bias is not None:
-            nn.init.zeros_(self.bias)
-
-    def forward(self, features, basis):
-        # features: (B, N, C_in)
-        # basis:    (B, N, N)
-        
-        # 1. K.batch_dot(basis, features) -> torch.bmm(basis, features)
-        # B x N x N @ B x N x C_in -> B x N x C_in
-        supports = torch.bmm(basis, features)
-        
-        # 2. K.dot(supports, self.kernel) -> supports @ self.weight
-        # B x N x C_in @ C_in x C_out -> B x N x C_out
-        output = supports @ self.weight
-
-        if self.bias is not None:
-            output = output + self.bias
-        
-        if self.activation is not None:
-            output = self.activation(output)
-            
-        return output
-    
-class SGcn(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(SGcn, self).__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-
-        self.sim_embed1 = nn.Linear(in_channels, in_channels)
-        self.sim_embed2 = nn.Linear(in_channels, in_channels)
-
-        self.graph1 = GraphConvolution(in_channels, in_channels, activation=F.relu)
-        self.graph2 = GraphConvolution(in_channels, in_channels, activation=F.relu)
-        self.graph3 = GraphConvolution(in_channels, out_channels, activation=F.relu)
-
-        self.ln1 = nn.LayerNorm(in_channels)
-        self.ln2 = nn.LayerNorm(in_channels)
-
-    def get_adj(self, x):
-        # x: (Batch, Nodes, Channels)
-        sim1 = self.sim_embed1(x)
-        sim2 = self.sim_embed2(x)
-
-        # adj: (Batch, Nodes, Nodes)
-        adj = torch.bmm(sim1, sim2.transpose(1, 2))
-        scale = self.in_channels ** -0.5
-        adj = adj * scale
-        adj = F.softmax(adj, dim=-1)
-        return adj
-
-    def forward(self, x):
-        # Input: (Batch, 3, H, W)
-        b, c, h, w = x.size()
-        x_reshaped = x.view(b, c, -1).permute(0, 2, 1)
-        
-        adj = self.get_adj(x_reshaped)
-        
-        outs = self.graph1(x_reshaped, adj)
-        outs = self.ln1(outs)
-        outs = self.graph2(outs, adj)
-        outs = self.ln2(outs)
-        outs = self.graph3(outs, adj)
-
-        outs = torch.mean(outs, dim=1)
-        outs = outs.view(b, self.out_channels, 1, 1)
-        return outs
-
-# SGCN Version
-class Seg_encoder_v1(nn.Module):
-    def __init__(self):
-        super(Seg_encoder_v1, self).__init__()
-        self.conv1a = nn.Conv3d(3, 64, kernel_size=3, padding=1)
-        self.bn1a = nn.BatchNorm3d(64)
-        self.conv1b = nn.Conv3d(64, 64, kernel_size=3, padding=1)
-        self.bn1b = nn.BatchNorm3d(64)
-        self.pool1 = nn.MaxPool3d((1, 2, 2))
-
-        self.conv2a = nn.Conv3d(64, 128, kernel_size=3, padding=1)
-        self.bn2a = nn.BatchNorm3d(128)
-        self.conv2b = nn.Conv3d(128, 128, kernel_size=3, padding=1)
-        self.bn2b = nn.BatchNorm3d(128)
-        self.pool2 = nn.MaxPool3d((1, 2, 2))
-
-        self.sgcn = SGcn(in_channels=128, out_channels=128)
-        self.final_norm = nn.BatchNorm3d(128)
-
-    def forward(self, x):
-        # Input: (Batch, 3, T, H, W)
-        x = F.relu(self.bn1a(self.conv1a(x)))
-        x = F.relu(self.bn1b(self.conv1b(x)))
-        x = self.pool1(x)
-
-        x = F.relu(self.bn2a(self.conv2a(x)))
-        x = F.relu(self.bn2b(self.conv2b(x)))
-        x = self.pool2(x)
-
-        b, c, t, h, w = x.size()
-        x = self.sgcn(x.permute(0, 2, 1, 3, 4).contiguous().view(b*t, c, h, w))
-        x_out = self.final_norm(x.view(b, t, c ,1, 1).permute(0, 2, 1, 3, 4))
-        return x_out
-
-# GAP Version
-class Seg_encoder_v2(nn.Module):
-    def __init__(self):
-        super(Seg_encoder_v2, self).__init__()
-        self.conv1a = nn.Conv3d(3, 64, kernel_size=3, padding=1)
-        self.bn1a = nn.BatchNorm3d(64)
-        self.conv1b = nn.Conv3d(64, 64, kernel_size=3, padding=1)
-        self.bn1b = nn.BatchNorm3d(64)
-        self.pool1 = nn.MaxPool3d((1, 2, 2))
-
-        self.conv2a = nn.Conv3d(64, 128, kernel_size=3, padding=1)
-        self.bn2a = nn.BatchNorm3d(128)
-        self.conv2b = nn.Conv3d(128, 128, kernel_size=3, padding=1)
-        self.bn2b = nn.BatchNorm3d(128)
-        self.pool2 = nn.MaxPool3d((1, 2, 2))
-
-        self.adapter = nn.Sequential(
-            nn.Linear(128, 512),
-            nn.LayerNorm(512),
-            nn.Tanh()
-        )
-
-    def forward(self, x):
-        # Input: (Batch, 3, T, H, W)
-        x = F.relu(self.bn1a(self.conv1a(x)))
-        x = F.relu(self.bn1b(self.conv1b(x)))
-        x = self.pool1(x)
-        x = F.relu(self.bn2a(self.conv2a(x)))
-        x = F.relu(self.bn2b(self.conv2b(x)))
-        x = self.pool2(x) 
-        x = x.mean(dim=(3, 4), keepdim=True)
-
-        # x: (B, 128, T, 1, 1)
-        b, c, t, _, _ = x.size()
-        x = x.view(b, c, t)
-        x = x.permute(0, 2, 1)
-        x = self.adapter(x)
-
-        x = x.permute(0, 2, 1)      # (B, 512, T)
-        x = x.view(b, 512, t, 1, 1) # (B, 512, T, 1, 1)
-        return x
-
-# FCN version
-class Seg_encoder_v3(nn.Module):
-    def __init__(self, out_channels=256):
-        super(Seg_encoder_v3, self).__init__()
-        self.conv1a = nn.Conv3d(3, 64, kernel_size=3, padding=1)
-        self.bn1a = nn.BatchNorm3d(64)
-        self.conv1b = nn.Conv3d(64, 64, kernel_size=3, padding=1)
-        self.bn1b = nn.BatchNorm3d(64)
-        self.pool1 = nn.MaxPool3d((1, 2, 2))
-
-        self.conv2a = nn.Conv3d(64, 128, kernel_size=3, padding=1)
-        self.bn2a = nn.BatchNorm3d(128)
-        self.conv2b = nn.Conv3d(128, 128, kernel_size=3, padding=1)
-        self.bn2b = nn.BatchNorm3d(128)
-        self.pool2 = nn.MaxPool3d((1, 2, 2))
-
-        self.adapter = nn.Sequential(
-            nn.Conv3d(128, out_channels, kernel_size=1, bias=False),
-            nn.BatchNorm3d(out_channels),
-            nn.ReLU(inplace=True)
-        )
-
-    def forward(self, x):
-        # Input: (Batch, 3, Time, Height, Width)
-        x = F.relu(self.bn1a(self.conv1a(x)))
-        x = F.relu(self.bn1b(self.conv1b(x)))
-        x = self.pool1(x)
-        x = F.relu(self.bn2a(self.conv2a(x)))
-        x = F.relu(self.bn2b(self.conv2b(x)))
-        x = self.pool2(x)
-        x = self.adapter(x)        
-        # Output shape: (B, 256, T, H/4, W/4)
-        return x
     
 # SGCN Seg encoder + Cross-Attention
 class DAM_v1(nn.Module):
@@ -433,8 +232,7 @@ class DAM_2(nn.Module):
                 self.fusion_convs.append(nn.Identity())
 
     def forward(self, x, seg_input):
-        with torch.no_grad():
-            b_out = self.backbone_3d(x)
+        b_out = self.backbone_3d(x)
 
         # Output shape: (B, 256, T_seg, H_seg, W_seg)
         seg_out = self.seg_encoder(seg_input)
@@ -452,6 +250,165 @@ class DAM_2(nn.Module):
 
                 fused = torch.cat([b, aligned_seg], dim=1)
                 fused = self.fusion_convs[idx](fused)
+                b_out[idx] = self.dropout(fused)
+        return self.decoder(b_out[:self.num_encoder_layers])
+    
+def conv3d_downsample(in_filters, out_filters, normalization=False):
+    """3D 下採樣：時間軸(T)步長為1(不壓縮)，空間軸(H,W)步長為2"""
+    layers = [nn.Conv3d(in_filters, out_filters, kernel_size=3, stride=(1, 2, 2), padding=1)]
+    layers.append(nn.LeakyReLU(0.2, inplace=True))
+    if normalization:
+        layers.append(nn.InstanceNorm3d(out_filters, affine=True))
+    return layers
+
+class CNN_PP_3D(nn.Module):
+    """
+    Modify from https://github.com/wenyyu/IA-Seg/blob/main/network/dip.py
+    """
+    def __init__(self, in_channels=3):
+        super(CNN_PP_3D, self).__init__()
+        self.feature_extractor = nn.Sequential(
+            nn.Conv3d(in_channels, 16, kernel_size=3, stride=(1, 2, 2), padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.InstanceNorm3d(16, affine=True),
+            *conv3d_downsample(16, 32, normalization=True),
+            *conv3d_downsample(32, 64, normalization=True),
+            *conv3d_downsample(64, 128, normalization=True),
+            *conv3d_downsample(128, 128),
+            nn.Dropout(p=0.5)
+        )
+        
+        # 使用全局池化將空間和時間壓縮為 1 個點
+        self.global_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        
+        # 輸出 4 個參數 (對應 cfg.num_filter_parameters = 4)
+        self.fc = nn.Conv3d(128, cfg.num_filter_parameters, kernel_size=1)
+
+    def forward(self, img_input):
+        # 輸入形狀: (B, 3, T, H, W)
+        B, C, T, H, W = img_input.shape
+        
+        # 1. 空間預處理：只把 H, W 縮放到 256x256 供參數網路預測，保留 T 維度不變
+        x_resized = F.interpolate(img_input, size=(T, 256, 256), mode='trilinear', align_corners=False)
+        
+        # 2. 萃取影片級別 (Clip-level) 的特徵
+        features = self.feature_extractor(x_resized) # (B, 128, T', 8, 8)
+        features = self.global_pool(features)        # (B, 128, 1, 1, 1)
+        
+        # 3. 預測全局參數
+        Pr_3d = self.fc(features) # 形狀: (B, 4, 1, 1, 1)
+        # 降維以匹配 2D filter 的期望格式 (B, 4, 1, 1)
+        Pr_2d = Pr_3d.squeeze(2)  
+        
+        # ==========================================
+        # 4. 張量折疊 (Tensor Folding) 與參數廣播
+        # ==========================================
+        # 影像折疊: (B, 3, T, H, W) -> (B, T, 3, H, W) -> (B*T, 3, H, W)
+        img_folded = img_input.transpose(1, 2).contiguous().view(B*T, C, H, W)
+        
+        # 參數擴展: 讓 T 幀的每一幀都拿到 "同一組" 影片級預測參數 (徹底消除閃爍)
+        # (B, 4, 1, 1) -> (B, T, 4, 1, 1) -> (B*T, 4, 1, 1)
+        self.Pr = Pr_2d.unsqueeze(1).expand(B, T, cfg.num_filter_parameters, 1, 1).contiguous().view(B*T, cfg.num_filter_parameters, 1, 1)
+
+        self.filtered_image_batch = img_folded
+        
+        # 初始化濾鏡
+        filters_op = [x(self, cfg) for x in cfg.filters]
+        self.filter_parameters = []
+        self.filtered_images = []
+
+        # 5. 依序套用濾鏡 (所有濾鏡在處理 (B*T, 3, H, W) 時都會以為這是普通的照片)
+        for j, filter_op in enumerate(filters_op):
+            self.filtered_image_batch, filter_parameter = filter_op.apply(self.filtered_image_batch, self.Pr)
+            self.filter_parameters.append(filter_parameter)
+            self.filtered_images.append(self.filtered_image_batch)
+            
+        # ==========================================
+        # 6. 張量展開 (Tensor Unfolding) 復原為影片 3D 格式
+        # ==========================================
+        # (B*T, 3, H, W) -> (B, T, 3, H, W) -> (B, 3, T, H, W)
+        final_output_3d = self.filtered_image_batch.view(B, T, C, H, W).transpose(1, 2).contiguous()
+        
+        # 返回過濾後的影片、特徵與參數
+        return final_output_3d, self.filtered_images, self.Pr, self.filter_parameters
+
+class GatedFusionAdapter(nn.Module):
+    def __init__(self, rgb_channels, seg_channels, out_channels):
+        super(GatedFusionAdapter, self).__init__()
+        self.gate_conv = nn.Sequential(
+            nn.Conv3d(rgb_channels + seg_channels, seg_channels, kernel_size=1, bias=True),
+            nn.Sigmoid()
+        )
+        
+        self.fusion_conv = nn.Sequential(
+            nn.Conv3d(rgb_channels + seg_channels, out_channels, kernel_size=1, bias=False),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, rgb_feat, seg_feat):
+        concat_feat = torch.cat([rgb_feat, seg_feat], dim=1)
+        gate = self.gate_conv(concat_feat)
+        gated_seg_feat = seg_feat * gate
+        final_concat = torch.cat([rgb_feat, gated_seg_feat], dim=1)
+        out = self.fusion_conv(final_concat)
+        return out
+
+# FCN Seg encoder + Concat + Gate Fusion + Video IAPM (CNN_PP_3D & filters)
+class DAM_v3(nn.Module):
+    def __init__(self, 
+                  num_encoder_layers=4,
+                  train_backbone=False,
+                  pretrained_backbone=False,
+                  transformer_params=None,
+                  **kwargs
+                ):
+
+        super(DAM_v3, self).__init__()
+        self.iapm = CNN_PP_3D(in_channels=3)
+        self.backbone_3d = SwinTransformer3DBackbone(pretrained=pretrained_backbone, train_backbone=train_backbone)
+        self.num_encoder_layers = num_encoder_layers
+        if num_encoder_layers in [1, 2, 3, 4]:
+            self.decoder = DecoderSwin(num_encoder_layers)
+        else:
+            raise ValueError(f'ERROR: unsupported num_encoder_layers={num_encoder_layers}')
+
+        self.seg_channels = 256
+        self.seg_encoder = Seg_encoder_v3(out_channels=self.seg_channels)
+        self.fuse_idx = transformer_params['fuse_idx']
+
+        self.fusion_convs = nn.ModuleList()
+        embed_dims = [768, 384, 192, 96]
+        self.dropout = nn.Dropout(0.5)
+
+        for i in range(4):
+            if i in self.fuse_idx:
+                rgb_dim = embed_dims[i]
+                fusion_layer = GatedFusionAdapter(
+                    rgb_channels=rgb_dim, 
+                    seg_channels=self.seg_channels, 
+                    out_channels=rgb_dim
+                )
+                self.fusion_convs.append(fusion_layer)
+            else:
+                self.fusion_convs.append(nn.Identity())
+
+    def forward(self, x, seg_input):
+        enhanced_x, _, _, _ = self.iapm(x)
+        b_out = self.backbone_3d(enhanced_x)
+
+        # Output shape: (B, 256, T_seg, H_seg, W_seg)
+        seg_out = self.seg_encoder(seg_input)
+        for idx, b in enumerate(b_out):
+            if idx in self.fuse_idx:
+                B, C, T_b, H, W = b.shape
+                aligned_seg = F.interpolate(
+                    seg_out, 
+                    size=(T_b, H, W), 
+                    mode='trilinear', 
+                    align_corners=False
+                )
+                fused = self.fusion_convs[idx](b, aligned_seg)
                 b_out[idx] = self.dropout(fused)
         return self.decoder(b_out[:self.num_encoder_layers])
 

@@ -16,7 +16,7 @@ import torch.nn.functional as F
 from dataloader import DReyeVEDataset, BDDADataset, BDDADataset_seg
 from loss import cc, sim, nss, kldiv
 import cv2
-import model
+import DAM.network.model as model
 from utils import img_save, AverageMeter, num_params, loss_func
 from tqdm import tqdm
 import yaml
