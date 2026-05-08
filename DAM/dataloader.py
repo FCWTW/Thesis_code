@@ -1023,8 +1023,14 @@ class BDDADataset_seg(DReyeVEDataset):
     
         print(f'Loading {self.mode} data')
         self.load_video_attributes(self.video_range)
+
         # load data in pandas dataframe
-        cached_filename = f'cache/{self.mode}_{self.dataset}_df.pkl'
+        cache_dir = 'cache'
+        os.makedirs(cache_dir, exist_ok=True)
+        cached_filename = os.path.join(
+            cache_dir,
+            f'{self.mode}_{self.dataset}_df.pkl'
+        )
 
         print('-> Loading vehicle data...')
         self.load_vehicle_data(self.video_range)

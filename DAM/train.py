@@ -16,7 +16,7 @@ import torch.nn.functional as F
 from dataloader import DReyeVEDataset, BDDADataset, BDDADataset_seg
 from loss import cc, sim, nss, kldiv
 import cv2
-import DAM.network.model as model
+import network.model as model
 from utils import img_save, AverageMeter, num_params, loss_func
 from tqdm import tqdm
 import yaml
@@ -328,7 +328,7 @@ class Train:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='configs/SCOUT_Seg.yaml', type=str, help='Path to config file in YAML format')
+    parser.add_argument('--config', default='config/DAM.yaml', type=str, help='Path to config file in YAML format')
     parser.add_argument('--save_dir', type=str, default=None, help='Save dir')
     args = parser.parse_args()
     print(args)

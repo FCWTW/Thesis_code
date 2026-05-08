@@ -189,7 +189,7 @@ class DAM_v1(nn.Module):
         return self.decoder(b_out[:self.num_encoder_layers])
     
 # FCN Seg encoder + Concat
-class DAM_2(nn.Module):
+class DAM_v2(nn.Module):
     def __init__(self, 
                   num_encoder_layers=4,
                   train_backbone=False,
@@ -198,7 +198,7 @@ class DAM_2(nn.Module):
                   **kwargs
                 ):
 
-        super(DAM_2, self).__init__()
+        super(DAM_v2, self).__init__()
         self.backbone_3d = SwinTransformer3DBackbone(pretrained=pretrained_backbone, train_backbone=train_backbone)
         self.num_encoder_layers = num_encoder_layers
         if num_encoder_layers in [1, 2, 3, 4]:
@@ -254,7 +254,7 @@ class DAM_2(nn.Module):
         return self.decoder(b_out[:self.num_encoder_layers])
     
 def conv3d_downsample(in_filters, out_filters, normalization=False):
-    """3D 下採樣：時間軸(T)步長為1(不壓縮)，空間軸(H,W)步長為2"""
+    # 3D downsampling: Time axis (T) step size of 1 (uncompressed), spatial axes (H, W) step size of 2
     layers = [nn.Conv3d(in_filters, out_filters, kernel_size=3, stride=(1, 2, 2), padding=1)]
     layers.append(nn.LeakyReLU(0.2, inplace=True))
     if normalization:
@@ -277,59 +277,38 @@ class CNN_PP_3D(nn.Module):
             *conv3d_downsample(128, 128),
             nn.Dropout(p=0.5)
         )
-        
-        # 使用全局池化將空間和時間壓縮為 1 個點
+        # Use global pooling to compress space and time into a single point
         self.global_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
-        
-        # 輸出 4 個參數 (對應 cfg.num_filter_parameters = 4)
         self.fc = nn.Conv3d(128, cfg.num_filter_parameters, kernel_size=1)
 
     def forward(self, img_input):
-        # 輸入形狀: (B, 3, T, H, W)
+        # Input shape: (B, 3, T, H, W)
         B, C, T, H, W = img_input.shape
-        
-        # 1. 空間預處理：只把 H, W 縮放到 256x256 供參數網路預測，保留 T 維度不變
         x_resized = F.interpolate(img_input, size=(T, 256, 256), mode='trilinear', align_corners=False)
-        
-        # 2. 萃取影片級別 (Clip-level) 的特徵
         features = self.feature_extractor(x_resized) # (B, 128, T', 8, 8)
         features = self.global_pool(features)        # (B, 128, 1, 1, 1)
-        
-        # 3. 預測全局參數
-        Pr_3d = self.fc(features) # 形狀: (B, 4, 1, 1, 1)
-        # 降維以匹配 2D filter 的期望格式 (B, 4, 1, 1)
-        Pr_2d = Pr_3d.squeeze(2)  
-        
-        # ==========================================
-        # 4. 張量折疊 (Tensor Folding) 與參數廣播
-        # ==========================================
-        # 影像折疊: (B, 3, T, H, W) -> (B, T, 3, H, W) -> (B*T, 3, H, W)
+
+        Pr_3d = self.fc(features) # (B, 4, 1, 1, 1)
+        Pr_2d = Pr_3d.squeeze(2)  # (B, 4, 1, 1)
+
+        # (B, 3, T, H, W) -> (B, T, 3, H, W) -> (B*T, 3, H, W)
         img_folded = img_input.transpose(1, 2).contiguous().view(B*T, C, H, W)
-        
-        # 參數擴展: 讓 T 幀的每一幀都拿到 "同一組" 影片級預測參數 (徹底消除閃爍)
+
         # (B, 4, 1, 1) -> (B, T, 4, 1, 1) -> (B*T, 4, 1, 1)
         self.Pr = Pr_2d.unsqueeze(1).expand(B, T, cfg.num_filter_parameters, 1, 1).contiguous().view(B*T, cfg.num_filter_parameters, 1, 1)
-
         self.filtered_image_batch = img_folded
-        
-        # 初始化濾鏡
+
         filters_op = [x(self, cfg) for x in cfg.filters]
         self.filter_parameters = []
         self.filtered_images = []
 
-        # 5. 依序套用濾鏡 (所有濾鏡在處理 (B*T, 3, H, W) 時都會以為這是普通的照片)
         for j, filter_op in enumerate(filters_op):
             self.filtered_image_batch, filter_parameter = filter_op.apply(self.filtered_image_batch, self.Pr)
             self.filter_parameters.append(filter_parameter)
             self.filtered_images.append(self.filtered_image_batch)
             
-        # ==========================================
-        # 6. 張量展開 (Tensor Unfolding) 復原為影片 3D 格式
-        # ==========================================
         # (B*T, 3, H, W) -> (B, T, 3, H, W) -> (B, 3, T, H, W)
         final_output_3d = self.filtered_image_batch.view(B, T, C, H, W).transpose(1, 2).contiguous()
-        
-        # 返回過濾後的影片、特徵與參數
         return final_output_3d, self.filtered_images, self.Pr, self.filter_parameters
 
 class GatedFusionAdapter(nn.Module):
