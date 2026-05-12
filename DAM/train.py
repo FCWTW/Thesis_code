@@ -77,16 +77,6 @@ class Train:
 
         self.model.to(self.device)
         
-        # Learning rate settings in the source code
-        '''
-        params = list(filter(lambda p: p.requires_grad, self.model.parameters())) 
-        if self.train_params['optimizer'] == 'Adam':
-            self.optimizer = torch.optim.Adam(params, lr=self.train_params['lr'], weight_decay=1e-4)
-        elif self.train_params['optimizer'] == 'AdamW':
-            self.optimizer = torch.optim.AdamW(params, lr=self.train_params['lr'])
-        else:
-            raise ValueError(f'ERROR: optimizer {self.train_params["optimizer"]} is not supported!')
-        '''
         backbone_params = []
         other_params = []
         for name, param in self.model.named_parameters():
