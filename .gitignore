@@ -1,0 +1,5 @@
+/DAM/train_runs
+/DAM/__pycache__
+/DAM/network/__pycache__
+/DAM/data_utils/__pycache__
+/DAM/cache
