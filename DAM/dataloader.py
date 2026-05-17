@@ -919,38 +919,28 @@ class BDDADataset_seg(DReyeVEDataset):
                         - set([str(x) for x in exclude_videos['training']]))
             self.data_path = os.path.join(self.dataset_path, 'training')
             self.step = self.obs_length//2
-            clip_json_name = 'training.json'
-        elif self.mode=="val":
-            video_ids = list(set(os.listdir(os.path.join(self.dataset_path,'validation','camera_frames'))) 
-                        - set([str(x) for x in exclude_videos['validation']]))
-            self.data_path = os.path.join(self.dataset_path, 'validation')
-            self.step = self.obs_length//2
-            clip_json_name = 'validation.json'
-        else:
-            video_ids = list(set(os.listdir(os.path.join(self.dataset_path,'test','camera_frames'))) 
-                        - set([str(x) for x in exclude_videos['test']]))
-            self.data_path = os.path.join(self.dataset_path, 'test')
-            self.step = 1
-            clip_json_name = 'test.json'
-
-        clip_json_path = os.path.join(self.annot_path, clip_json_name)
-        
-        if os.path.exists(clip_json_path):
-            with open(clip_json_path, 'r') as f:
-                day_night_labels = json.load(f)
-                
             if self.time_of_day != 'All':
+                clip_json_path = os.path.join(self.annot_path, 'training.json')
+                with open(clip_json_path, 'r') as f:
+                    day_night_labels = json.load(f)
                 filtered_ids = []
                 for vid in video_ids:
                     vid_str = str(vid)
                     if vid_str in day_night_labels:
                         if day_night_labels[vid_str]['label'] == self.time_of_day:
                             filtered_ids.append(vid)
-                
                 video_ids = filtered_ids
-                print(f"[{self.mode}] Successfully filtered {self.time_of_day} videos, retaining a total of {len(video_ids)} videos.")
+                print(f"-> Successfully filtered {self.time_of_day} videos, retaining a total of {len(video_ids)} videos.")
+        elif self.mode=="val":
+            video_ids = list(set(os.listdir(os.path.join(self.dataset_path,'validation','camera_frames'))) 
+                        - set([str(x) for x in exclude_videos['validation']]))
+            self.data_path = os.path.join(self.dataset_path, 'validation')
+            self.step = self.obs_length//2
         else:
-            print(f"Failed to load {clip_json_path}...Training will proceed using the full dataset.")
+            video_ids = list(set(os.listdir(os.path.join(self.dataset_path,'test','camera_frames'))) 
+                        - set([str(x) for x in exclude_videos['test']]))
+            self.data_path = os.path.join(self.dataset_path, 'test')
+            self.step = 1
 
         self.video_range = sorted([int(x) for x in video_ids])
         self.frame_num = {}

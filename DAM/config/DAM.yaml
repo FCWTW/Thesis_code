@@ -40,7 +40,7 @@ train_params:
   lr_sched: True
   early_stop: True
   optimizer: Adam
-  batch_size: 4
+  batch_size: 6
   log_interval: 10
   no_workers: 8 # number of workers for dataloader
   weighted_sampler: False # select "hard" samples more frequently during training, may not use all samples

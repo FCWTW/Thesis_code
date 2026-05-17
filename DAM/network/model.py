@@ -401,7 +401,7 @@ if __name__ == "__main__":
     x_dummy = torch.randn(batch_size, 3, time_steps, height, width)
     y_dummy = torch.randn(batch_size, 3, time_steps, height, width)
 
-    model = DAM_2()
+    model = DAM_v2()
     if torch.cuda.is_available():
         model = model.cuda()
         x_dummy = x_dummy.cuda()

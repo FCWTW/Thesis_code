@@ -27,20 +27,22 @@ import torch.optim.lr_scheduler as lr_scheduler
 import pandas as pd
 from os.path import join
 from utils import get_task_attribute_dict
-import itertools
-
 from torchsummary import summary
+import itertools
 
 blur_func = transforms.GaussianBlur(11, 2)
 
 def get_model_class(model_class_name):
-
     obj = getattr(model, model_class_name, None)
     if obj is None:
         raise ValueError(f'Error: model {model_class_name} is not supported!')
     else:
         return obj
 
+def infinite_iterator(dataloader):
+    while True:
+        for batch in dataloader:
+            yield batch
 
 class Train:
     def __init__(self, config_file='configs/DAM.yaml', save_dir=None):
@@ -77,16 +79,25 @@ class Train:
             self.model = nn.DataParallel(self.model)
 
         self.model.to(self.device)
-        
+        # print(self.model)
+
         backbone_params = []
+        iapm_params = []
         other_params = []
         for name, param in self.model.named_parameters():
             if 'backbone' in name:
                 backbone_params.append(param)
+            elif 'iapm' in name:
+                iapm_params.append(param)
             else:
                 other_params.append(param)
+                
+        # print(f'backbone_params: {len(backbone_params)}')
+        # print(f'iapm_params: {len(iapm_params)}')
+        # print(f'other_params: {len(other_params)}')
         self.optimizer = torch.optim.Adam([
             {'params': backbone_params, 'lr': 1e-6},
+            {'params': iapm_params,     'lr': 3e-4},
             {'params': other_params,    'lr': 1e-4}
         ], weight_decay=1e-4)
 
@@ -119,21 +130,17 @@ class Train:
                                         time_of_day='Night')
             night_train_dataset.setup()
 
-            # half_batch_size = max(1, self.train_params['batch_size'] // 2)
-            total_bs = self.train_params['batch_size']
-            day_bs = max(1, int(total_bs * 0.75))
-            night_bs = max(1, total_bs - day_bs)
-
             self.day_train_loader = torch.utils.data.DataLoader(day_train_dataset, 
-                                                            batch_size=day_bs,
+                                                            batch_size=5,
                                                             shuffle=True, 
                                                             num_workers=self.train_params['no_workers'])
             
             self.night_train_loader = torch.utils.data.DataLoader(night_train_dataset, 
-                                                            batch_size=night_bs,
+                                                            batch_size=1,
                                                             shuffle=True, 
                                                             num_workers=self.train_params['no_workers'])
         else:
+            print(f'-> No Domain-Balanced Batching')
             train_dataset = dataset_class(self.model_params['clip_size'],
                                         old_gt=False,
                                         mode='train',
@@ -205,14 +212,16 @@ class Train:
 
         log_interval = self.train_params['log_interval']
 
-        if self.model_params['use_DBB']:
-            train_iterator = zip(self.day_train_loader, itertools.cycle(self.night_train_loader))
-            num_samples = len(self.day_train_loader)
+        if self.model_params.get('use_DBB', False):            
+            total_videos = len(self.day_train_loader.dataset) + len(self.night_train_loader.dataset)
+            original_total_steps = total_videos // self.train_params['batch_size']
+            num_samples = original_total_steps 
+            # print(f'-> Total Step: {original_total_steps}')
+            raw_iterator = zip(self.day_train_loader, infinite_iterator(self.night_train_loader))
+            train_iterator = itertools.islice(raw_iterator, original_total_steps)
         else:
             train_iterator = self.train_loader
             num_samples = len(self.train_loader)
-
-        original_total_steps = (len(self.day_train_loader.dataset) + len(self.night_train_loader.dataset)) // self.train_params['batch_size']
 
         with tqdm(train_iterator, total=num_samples, unit='batch', desc=f'Train epoch {epoch}/{self.train_params["no_epochs"]}') as tepoch:
             for idx, batch_data in enumerate(tepoch):
@@ -272,9 +281,6 @@ class Train:
                 #     if param.grad is not None:
                 #         print(f"{name} grad norm: {param.grad.norm()}")
                 self.optimizer.step()
-
-                if idx >= original_total_steps - 1:
-                    break
 
                 total_loss.update(loss.item())
                 cur_loss.update(loss.item())

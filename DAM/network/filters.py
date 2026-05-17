@@ -263,24 +263,26 @@ class GammaFilter(Filter):
 # Filter Parameters
 __C = edict()
 cfg = __C
-cfg.filters = [ExposureFilter, GammaFilter, ContrastFilter, UsmFilter]
-cfg.num_filter_parameters = 4
+# cfg.filters = [ExposureFilter, GammaFilter, ContrastFilter, UsmFilter]
+# cfg.num_filter_parameters = 4
+cfg.filters = [ExposureFilter, GammaFilter]
+cfg.num_filter_parameters = 2
 cfg.masking = False
 
 cfg.exposure_begin_param = 0
 cfg.gamma_begin_param = 1
-cfg.contrast_begin_param = 2
-cfg.usm_begin_param = 3
+# cfg.contrast_begin_param = 2
+# cfg.usm_begin_param = 3
 
 cfg.curve_steps = 8
-cfg.gamma_range = 3
-cfg.exposure_range = 3.5
-cfg.wb_range = 1.1
-cfg.color_curve_range = (0.90, 1.10)
-cfg.lab_curve_range = (0.90, 1.10)
-cfg.tone_curve_range = (0.5, 2)
-cfg.defog_range = (0.1, 1.0)
-cfg.usm_range = (0.0, 5)
-cfg.cont_range = (0.0, 1.0)
+cfg.gamma_range = 2.5
+cfg.exposure_range = 1.5
+# cfg.wb_range = 1.1
+# cfg.color_curve_range = (0.90, 1.10)
+# cfg.lab_curve_range = (0.90, 1.10)
+# cfg.tone_curve_range = (0.5, 2)
+# cfg.defog_range = (0.1, 1.0)
+# cfg.usm_range = (0.0, 5)
+# cfg.cont_range = (0.0, 1.0)
 
 ###########################################################################
